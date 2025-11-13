@@ -14,6 +14,6 @@ process TrimReads {
 
     script:
     """
-    trim_galore --output_dir . ${fastq}
+    trim_galore ${fastq}
     """
 }

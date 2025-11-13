@@ -8,14 +8,20 @@ process AlignReads {
 
     input:
     tuple val(sample_id), path(fastq)
-    val ref_index
+    path ref_index
 
     output:
-    tuple val(sample_id), path()
+    tuple val(sample_id), path("*.bam"), path("*.bai")
 
     script:
+    def sample_name = fastq.baseName.replace('.fq.gz', '')
     """
-    bowtie2 -x ${ref_index} -
+    bowtie2 -x ${ref_index} \
+        -p ${params.threads} \
+        -U ${fastq} | samtools view -bS -q 25 - | \
+        samtools sort -@ ${task.cpus} -o ${sample_name}.bam
+
+    samtools index ${sample_name}.bam
     """
 
 }
