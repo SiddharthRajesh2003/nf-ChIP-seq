@@ -4,7 +4,7 @@ nextflow.enable.dsl = 2
 
 process TrimReads {
     tag "Trimming Reads for ${sample_id}"
-    publishDir "${params.fastq_dir}/trimmed", mode: 'copy'
+    publishDir "${params.trimmed_reads}", mode: 'copy'
 
     input:
     tuple val(sample_id), path(fastq)

@@ -1,34 +1,31 @@
-#!usr/env/bin nextflow
+#!/usr/bin/env nextflow
 
 nextflow.enable.dsl = 2
 
-process MarkDuplicate {
+process MarkDuplicates {
     tag "Marking Duplicates for ${sample_id}"
-    publishDir "${params.bam_dir}", mode: 'copy'
+    publishDir "${params.mkdp}", mode: 'copy'
 
     input:
-    tuple val(sample_id), path(bam), path(bai)
+    tuple val(sample_id), path(bam)
 
     output:
-    tuple val(sample_id), path("*_marked.bam"), path("*_marked.bai")
+    tuple val(sample_id), path("*_mkdp.bam")
     path "*_marked_duplicates_metrics.txt"
 
     script:
     def sample_name = bam.baseName.replace('.bam', '')
-    """
-    # Set JAVA memory options (use ~75GB of your 100GB allocation)
-    export JAVA_OPTS="-Xmx75g -XX:ParallelGCThreads=4"
-    
+    """    
     # Create temp directory for GATK
     mkdir -p ./tmp
     
-    gatk --java-options "-Xmx75g -XX:ParallelGCThreads=4" MarkDuplicates \\
+    picard MarkDuplicates \\
         -I ${bam} \\
-        -O ${sample_name}_marked_duplicates.bam \\
+        -O ${sample_name}_mkdp.bam \\
         -M ${sample_name}_marked_duplicates_metrics.txt \\
-        --CREATE_INDEX true \\
         --VALIDATION_STRINGENCY LENIENT \\
         --TMP_DIR ./tmp \\
-        --MAX_RECORDS_IN_RAM 5000000
+        --MAX_RECORDS_IN_RAM 5000000 \\
+        --REMOVE_DUPLICATES true
     """
 }
