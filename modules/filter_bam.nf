@@ -10,7 +10,7 @@ process FilterBAM {
     tuple val(sample_id), path(bam)
 
     output:
-    tuple val(sample_id), path("*_filtered.bam")
+    tuple val(sample_id), path("*_filtered.bam"), path("*_filtered.bai")
 
     script:
     def sample_name = bam.baseName.replace('.bam', '')

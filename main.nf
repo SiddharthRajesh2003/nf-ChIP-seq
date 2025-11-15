@@ -4,8 +4,8 @@ nextflow.enable.dsl = 2
 
 params.base = "/N/project/Krolab/Siddharth/nf-chip-seq"
 params.ref_dir = "${params.base}/reference"
-params.ref = "${params.ref_dir}/human_reference.fa"
-params.gtf = "${params.ref_dir}/human_reference.gtf"
+params.ref = "${params.ref_dir}/hg19.fa"
+params.gtf = "${params.ref_dir}/hg19.knownGene.gtf"
 params.input_csv = 'samples.csv'
 params.threads = 8
 
@@ -19,6 +19,9 @@ params.results = "${params.base}/results"
 // Directories for Quality Control
 params.qc_dir_before_trim = "${params.results}/fastqc/raw_reads"
 params.qc_dir_after_trim = "${params.results}/fastqc/trimmed_reads"
+
+// Parameters for Trimming
+params.cutadapt = "/N/u/sidrajes/Quartz/.conda/envs/cutadapt/bin/cutadapt"
 
 // Directory for aligned BAM files
 params.bam_dir = "${params.results}/bam"
@@ -34,7 +37,8 @@ params.fallback_to_mkdp = true
 
 params.filtered = "${params.bam_dir}/filtered"
 params.stats_dir = "${params.results}/bam_stats"
-params.skip_alignment = false
+params.skip_filtering = false
+params.blacklist = "${params.ref_dir}/hg19-blacklist.v2.bed"
 
 // Directories for Peak Calling
 params.peaks_dir = "${params.results}/peaks"
@@ -66,7 +70,8 @@ include { BuildIndex } from './modules/build_index.nf'
 include { AlignReads } from './modules/align.nf'
 include { AlignStats } from './modules/align_stats.nf'
 include { MarkDuplicates } from './modules/mkdp.nf'
-
+include { FilterBAM } from './modules/filter_bam.nf'
+include { EmptyProcess } from './modules/empty.nf'
 
 def shouldSkipAlignment() {
     if (!params.skip_alignment) {
@@ -123,7 +128,36 @@ def shouldSkipMKDP() {
     return true
 }
 
+def shouldSkipFiltering() {
+    if (!params.skip_filtering) {
+        return false
+    }
+
+    def filterDir = file(params.filtered)
+    if (!filterDir.exists()) {
+        if (params.fallback_to_filtering) {
+            log.warn "Mark Duplicates directory ${params.mkdp} does not exist! Will perform Mark Duplicates with Picard"
+            return false
+        } else {
+            error "Mark Duplicates directory ${params.mkdp} does not exist and fallback_to_mkdp is disabled!"
+        }
+    }
+
+    def mkdpFiles = filterDir.listFiles().findAll { f -> f.name.endsWith('_filtered.bam') }
+    if (mkdpFiles.isEmpty()) {
+        if (params.fallback_to_mkdp) {
+            log.warn "No Mark Duplicates BAM files found in ${params.mkdp}! Will perform Mark Duplicates with Picard"
+        } else {
+            error "No Mark Duplicates BAM files found in ${params.mkdp} and fallback_to_mkdp is disabled!"
+        }
+    }
+    return true
+}
+
 workflow{
+
+    ref_index = BuildIndex(tuple(file(params.ref), file(params.gtf)))
+    
     channel
         .fromPath(params.input_csv)
         .splitCsv(header:true)
@@ -137,8 +171,6 @@ workflow{
     trimmed_ch = TrimReads(samples_ch)
 
     QC_after_trim(trimmed_ch, params.qc_dir_after_trim)
-
-    ref_index = BuildIndex(tuple(file(params.ref), file(params.gtf)))
 
     actuallySkipAlignment = shouldSkipAlignment()
     
@@ -201,10 +233,65 @@ workflow{
         }
 
         // Perform Mark Duplicates
-        mkdp_ch = MarkDuplicates(bam_ch)
+        new_mkdp_ch = MarkDuplicates(bam_ch)
 
-        mkdp_ch = existing_mkdp_ch.mix(mkdp_ch)
+        mkdp_ch = existing_mkdp_ch.mix(new_mkdp_ch)
     }
 
-    
+    actuallySkipFiltering = shouldSkipFiltering()
+
+    if (actuallySkipFiltering) {
+        log.info "Skipping BAM filtering as per request and using existing filtered BAM files fro ${params.filtered}"
+
+        existing_filtered_ch = channel
+            .fromPath("${params.filtered}/*_filtered.bam", checkIfExists: true)
+            .map { bam ->
+                log.info "Processing existing filtered BAM file"
+                def bai_paths = [
+                    file("${bam}.bai"),                           // standard .bam.bai
+                    file("${bam.toString().replaceAll(/\.bam$/, '.bai')}")  // alternative .bai
+                ]
+
+                def bai = bai_paths.find { f -> f.exists()}
+                if (bai) {
+                    log.info "Found index for ${bam.name}: ${bai.name}"
+                    return tuple(bam, bai)
+                } else {
+                    log.error "Index file not found for ${bam.name}"
+                    log.error "Looked for: ${bai_paths.collect{ f -> f.toString()}.join(', ')}"
+                    error "Index file not found for ${bam.name}. Please ensure BAM files are properly indexed."
+                }
+                }
+    } else {
+        log.info "Performing BAM filtering"
+        
+        // Checking for existing filtered BAMs to reuse
+        existing_filtered_ch = channel.empty()
+        if (file(params.filtered).exists()) {
+            existing_filtered_ch = channel
+                .fromPath("${params.filtered}/*_filtered.bam", checkIfExists: false)
+                .map { bam ->
+                    log.info "Checking for existing BAI file for filtered BAM: ${bam.baseName}"
+                    def bai_paths = [
+                        file("${bam}.bai"),                           // standard .bam.bai
+                        file("${bam.toString().replaceAll(/\.bam$/, '.bai')}")  // alternative .bai
+                    ]
+                    def bai = bai_paths.find { f -> f.exists() }
+                    if (bai) {
+                        log.info "Found existing indexed BAM: ${bam.name}"
+                        return tuple(bam, bai)
+                    } else {
+                        log.warn "Found BAM without index: ${bam.name} - will skip"
+                        return null
+                    }
+                }
+                .filter { f -> f != null} // Removes nulls where no BAI was found
+        }
+        new_filtered_ch = FilterBAM(mkdp_ch)
+
+        filtered_ch = existing_filtered_ch.mix(new_filtered_ch)
+    }
+
+    EmptyProcess(filtered_ch)
+
 }

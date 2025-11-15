@@ -10,7 +10,7 @@ process BuildIndex {
     tuple path(fasta), path(gtf)
 
     output:
-    path "${fasta.baseName}_index"
+    path "*.bt2"
 
     script:
     """
