@@ -14,6 +14,10 @@ process AnnotatePeaks {
 
     script:
     """
-    
+    annotatePeaks.pl ${peaks} ${params.ref} \
+        -gtf ${params.gtf} \
+        -annStats ${sample_id}_annotation_stats.txt \
+        -CpG \
+        > ${peaks.baseName}_annotated.bed
     """
 }

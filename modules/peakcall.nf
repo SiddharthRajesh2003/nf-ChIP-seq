@@ -7,14 +7,21 @@ process PeakCalling {
     publishDir "${params.peaks_dir}"
 
     input:
-    tuple val(sample_id), path(bam)
-    path ref_index
+    tuple val(sample_id), path(bam), path(bai)
 
     output:
-    path "${sample_id}.broadPeak"
+    tuple val(sample_id), path("*.xls"), path("*.bed"), path("*.broadPeak"), path("*.gappedPeak")
 
     script:
+    def sample_name = bam.baseName.replace('_sorted.bam', '')
     """
-    mac2 -t ${params.threads} -broad 
+    macs3 -t ${bam} --broad \
+        -f BAM -g ${params.genome_size} \
+        -n ${sample_name} \
+        --qvalue 0.05 \
+        --broad-cutoff 0.1 \
+        --nomodel \
+        --extsize 200 \
+        --keep-dup all
     """
 }

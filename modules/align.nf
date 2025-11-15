@@ -15,8 +15,9 @@ process AlignReads {
 
     script:
     def sample_name = fastq.baseName.replace('.fq.gz', '')
+    def index_base = ref_index[0].toString().replaceAll(/\.1\.bt2$/, '')
     """
-    bowtie2 -x ${ref_index} \
+    bowtie2 -x ${index_base} \
         -p ${params.threads} \
         -U ${fastq} | samtools view -bS -q 25 - | \
         samtools sort -@ ${task.cpus} -o ${sample_name}.bam

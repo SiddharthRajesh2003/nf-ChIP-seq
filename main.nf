@@ -41,25 +41,30 @@ params.skip_filtering = false
 params.blacklist = "${params.ref_dir}/hg19-blacklist.v2.bed"
 
 // Directories for Peak Calling
-params.peaks_dir = "${params.results}/peaks"
+params.peaks_dir = "${params.results}/peaks/broad"
+params.annotation_dir = "${params.results}/peaks/annotated"
+params.genome_size = 'hs'
 
 
 def helpMessage() {
     log.info"""
     ===============================================
-     DNA-seq Analysis Pipeline
+            ChIP-seq Analysis Pipeline
     ===============================================
     
     Usage:
-      nextflow run main.nf [options]
+        nextflow run main.nf [options]
     
     Required parameters:
-      --input           Path to input csv file
-      --ref             Path to reference genome FASTA
-      --gtf             Path to reference genome GTF
+        --input           Path to input csv file
+        --ref             Path to reference genome FASTA
+        --gtf             Path to reference genome GTF
+        --blacklist       Path to blacklist BED file
     
     Optional Parameters:
         --skip_alignment   Skip alignment if BAM files are present (default: false)
+        --skip_mkdp        Skip Mark Duplicates if BAM files are present (default: false)
+        --skip_filtering   Skip BAM filtering if filtered BAM files are present (default: false)
     """
 }
 
