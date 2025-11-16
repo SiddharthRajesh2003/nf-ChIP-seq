@@ -12,12 +12,11 @@ process PeakCalling {
     output:
     tuple val(sample_id), path("*.xls"), path("*.bed"), path("*.broadPeak"), path("*.gappedPeak")
 
-    script:
-    def sample_name = bam.baseName.replace('_sorted.bam', '')
+    script:    
     """
     macs3 -t ${bam} --broad \
         -f BAM -g ${params.genome_size} \
-        -n ${sample_name} \
+        -n ${sample_id} \
         --qvalue 0.05 \
         --broad-cutoff 0.1 \
         --nomodel \

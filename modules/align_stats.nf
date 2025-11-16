@@ -7,17 +7,19 @@ process AlignStats {
     publishDir "${params.stats_dir}", mode: 'copy'
 
     input:
-    tuple val(sample_id), path(bam), path(bai)
+    tuple val(sample_id), path(bam)
+    val out_dir
 
     output:
-    path "${sample_id}_alignment_stats.txt"
+    tuple path("*_flagstats.txt"), path("*_stats.txt"), path("*_idxstats.txt")
 
     script:
+    def sample_name = sample_id.split(':')[-1]
     """
-    samtools flagstat ${bam} > ${bam.baseName}_flagstats.txt
+    samtools flagstat ${bam} > ${sample_name}_flagstats.txt
 
-    samtools stats ${bam} > ${bam.baseName}_stats.txt
+    samtools stats ${bam} > ${sample_name}_stats.txt
 
-    samtools idxstats ${bam} > ${bam.baseName}_idxstats.txt
+    samtools idxstats ${bam} > ${sample_name}_idxstats.txt
     """
 }

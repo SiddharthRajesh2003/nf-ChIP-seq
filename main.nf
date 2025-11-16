@@ -29,16 +29,22 @@ params.bam_dir = "${params.results}/bam"
 params.aligned = "${params.bam_dir}/original"
 params.skip_alignment = false
 params.fallback_to_alignment = true
+params.stats_dir = "${params.results}/bam_stats"
+params.stats_out_dir = "${params.stats_dir}/original"
 
+
+// Parameters for Marking PCR Duplicates in the BAM files
 params.mkdp = "${params.bam_dir}/mkdp"
 params.skip_mkdp = false
 params.fallback_to_mkdp = true
+params.mkdp_stats = "${params.stats_dir}/mkdp"
 
 
+// Parameters for filtering random noise regions from the BAM files
 params.filtered = "${params.bam_dir}/filtered"
-params.stats_dir = "${params.results}/bam_stats"
 params.skip_filtering = false
 params.blacklist = "${params.ref_dir}/hg19-blacklist.v2.bed"
+params.filtered_stats = "${params.stats_dir}/filtered"
 
 // Directories for Peak Calling
 params.peaks_dir = "${params.results}/peaks/broad"
@@ -73,10 +79,13 @@ include { QualityControl as QC_after_trim } from './modules/qc.nf'
 include { TrimReads } from './modules/trim_reads.nf'
 include { BuildIndex } from './modules/build_index.nf'
 include { AlignReads } from './modules/align.nf'
-include { AlignStats } from './modules/align_stats.nf'
+include { AlignStats as OriginalStats } from './modules/align_stats.nf'
+include { AlignStats as MKDPStats } from './modules/align_stats.nf'
+include { AlignStats as FilteredStats } from './modules/align_stats.nf'
 include { MarkDuplicates } from './modules/mkdp.nf'
 include { FilterBAM } from './modules/filter_bam.nf'
-include { EmptyProcess } from './modules/empty.nf'
+include { PeakCalling } from './modules/peakcall.nf'
+include { AnnotatePeaks } from './modules/peak_annotation.nf'
 
 def shouldSkipAlignment() {
     if (!params.skip_alignment) {
@@ -211,7 +220,7 @@ workflow{
     }
 
 
-    AlignStats(bam_ch)
+    OriginalStats(bam_ch, params.stats_out_dir)
 
     actuallySkipMKDP = shouldSkipMKDP()
 
@@ -242,6 +251,10 @@ workflow{
 
         mkdp_ch = existing_mkdp_ch.mix(new_mkdp_ch)
     }
+
+    MKDPStats(mkdp_ch
+    .map { mkdp_id, bam, _metrics -> tuple(mkdp_id, bam) }, params.mkdp_stats)
+
 
     actuallySkipFiltering = shouldSkipFiltering()
 
@@ -292,11 +305,12 @@ workflow{
                 }
                 .filter { f -> f != null} // Removes nulls where no BAI was found
         }
-        new_filtered_ch = FilterBAM(mkdp_ch)
+        new_filtered_ch = FilterBAM(mkdp_ch.map { mkdp_id, bam, _metrics -> tuple(mkdp_id, bam) })
 
         filtered_ch = existing_filtered_ch.mix(new_filtered_ch)
     }
 
-    EmptyProcess(filtered_ch)
+    FilteredStats(filtered_ch
+    .map { filtered_id, bam, _bai -> tuple(filtered_id, bam)}, params.filtered_stats)
 
 }

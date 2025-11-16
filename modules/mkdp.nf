@@ -10,16 +10,15 @@ process MarkDuplicates {
     tuple val(sample_id), path(bam)
 
     output:
-    tuple val(sample_id), path("*_mkdp.bam")
-    path "*_marked_duplicates_metrics.txt"
+    tuple val(sample_id), path("*_mkdp.bam"), path ("*_marked_duplicates_metrics.txt")
 
     script:
-    def sample_name = bam.baseName.replace('.bam', '')
+    def sample_name = sample_id.split(':')[-1]  // Get everything after ':'
     """    
     # Create temp directory for GATK
     mkdir -p ./tmp
     
-    picard MarkDuplicates \\
+    gatk MarkDuplicates \\
         -I ${bam} \\
         -O ${sample_name}_mkdp.bam \\
         -M ${sample_name}_marked_duplicates_metrics.txt \\

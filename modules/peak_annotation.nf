@@ -10,7 +10,7 @@ process AnnotatePeaks {
     tuple val(sample_id), path(peaks), path(annotation_db)
 
     output:
-    path "${peaks.baseName}_annotated.bed"
+    path "${sample_id}_annotated.bed"
 
     script:
     """
@@ -18,6 +18,6 @@ process AnnotatePeaks {
         -gtf ${params.gtf} \
         -annStats ${sample_id}_annotation_stats.txt \
         -CpG \
-        > ${peaks.baseName}_annotated.bed
+        > ${sample_id}_annotated.bed
     """
 }
