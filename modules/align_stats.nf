@@ -4,7 +4,7 @@ nextflow.enable.dsl = 2
 
 process AlignStats {
     tag "Alignment Statistics for ${sample_id}"
-    publishDir "${params.stats_dir}", mode: 'copy'
+    publishDir "${out_dir}", mode: 'copy'
 
     input:
     tuple val(sample_id), path(bam)

@@ -15,10 +15,10 @@ process FilterBAM {
     script:
     def sample_name = sample_id.split(':')[-1]  // Get everything after ':'
     """
-    Apps/ngsutilsj bam-filter --mapped --no-qcfail --tag-min MAPQ:30 \
+    ${params.base}/Apps/ngsutilsj bam-filter --mapped --no-qcfail --tag-min MAPQ:30 \
         ${bam} ${sample_name}_filtered0.bam
 
-    Apps/ngsutilsj bam-filter --bed-exclude ${params.blacklist} \
+    ${params.base}/Apps/ngsutilsj bam-filter --bed-exclude ${params.blacklist} \
         ${sample_name}_filtered0.bam ${sample_name}_filtered.bam
     
     samtools index ${sample_name}_filtered.bam -o ${sample_name}_filtered.bai

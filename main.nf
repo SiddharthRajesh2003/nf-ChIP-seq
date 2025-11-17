@@ -178,9 +178,15 @@ workflow{
         .map {row -> tuple(row.sample_id, file(row.fastq_path))}
         .set { samples_ch }
 
-    QC_before_trim(samples_ch, params.qc_dir_before_trim)
+    // Create a persistent mapping from short sample name to full sample_id
+    // This will be used throughout to maintain the full sample_id
+    sample_id_mapping_ch = samples_ch
+        .map { sample_id, _fastq -> 
+            def short_name = sample_id.split(':')[-1]
+            tuple(short_name, sample_id)
+        }
 
-    sample_id = samples_ch.map { sample_id, _fastq -> sample_id }
+    QC_before_trim(samples_ch, params.qc_dir_before_trim)
 
     trimmed_ch = TrimReads(samples_ch)
 
@@ -189,34 +195,60 @@ workflow{
     actuallySkipAlignment = shouldSkipAlignment()
     
     if (actuallySkipAlignment) {
-        log.info "Skipping alignment as per request and using existing BAM files from ${params.bam_dir}"
+        log.info "Skipping alignment as per request and using existing BAM files from ${params.aligned}"
 
-        // Create a channel for existing BAM files
+        // Create a channel for existing BAM files and join with sample_id mapping
         bam_ch = channel
-            .fromPath("${params.bam_dir}/*.bam", checkIfExists: true)
+            .fromPath("${params.aligned}/*.bam", checkIfExists: true)
             .map { bam -> 
-                log.info "Processing existing BAM file: ${bam.name} for sample ${sample_id}"
-                tuple(sample_id, bam)
+                def short_name = bam.baseName
+                log.info "Found existing BAM file: ${bam.name}"
+                tuple(short_name, bam)
+            }
+            .join(sample_id_mapping_ch)
+            .map { _short_name, bam, full_sample_id ->
+                log.info "Matched BAM ${bam.name} to sample ${full_sample_id}"
+                tuple(full_sample_id, bam)
             }
     } else {
         log.info "Performing alignment with Bowtie2"
         
-        // Check for existing BAMs that we can reuse
-        existing_bam_ch = channel.empty()
-        if (file(params.bam_dir).exists()) {
+        // Check for existing BAMs to potentially reuse
+        if (file(params.aligned).exists()) {
             existing_bam_ch = channel
-                .fromPath("${params.bam_dir}/*.bam", checkIfExists: false)
+                .fromPath("${params.aligned}/*.bam", checkIfExists: false)
                 .map { bam ->
-                    log.info "Reusing existing BAM file: ${bam.name} for sample ${sample_id}"
-                    tuple(sample_id, bam)
+                    def short_name = bam.baseName
+                    tuple(short_name, bam)
                 }
+                .join(sample_id_mapping_ch)
+                .map { _short_name, bam, full_sample_id ->
+                    log.info "Found existing BAM: ${bam.name} for sample ${full_sample_id}"
+                    tuple(full_sample_id, bam)
+                }
+            
+            // Find samples that need alignment
+            samples_to_align = trimmed_ch
+                .join(existing_bam_ch, by: 0, remainder: true)
+                .filter { _sample_id, _fastq, existing_bam -> existing_bam == null }
+                .map { sample_id, fastq, _existing_bam -> tuple(sample_id, fastq) }
+            
+            reused_bams = trimmed_ch
+                .join(existing_bam_ch, by: 0)
+                .map { sample_id, _fastq, bam -> 
+                    log.info "Reusing existing BAM for sample ${sample_id}"
+                    tuple(sample_id, bam) 
+                }
+            
+            // Perform alignment for samples without existing BAMs
+            new_bam_ch = AlignReads(samples_to_align, ref_index)
+            
+            // Combine reused and newly aligned BAMs
+            bam_ch = reused_bams.mix(new_bam_ch)
+        } else {
+            // No existing BAMs, align everything
+            bam_ch = AlignReads(trimmed_ch, ref_index)
         }
-        
-        // Perform new alignment
-        new_bam_ch = AlignReads(trimmed_ch, ref_index)
-        
-        // Use cached BAMs if available, otherwise use new BAMs
-        bam_ch = existing_bam_ch.mix(new_bam_ch)
     }
 
 
@@ -227,59 +259,100 @@ workflow{
     if (actuallySkipMKDP) {
         log.info "Skipping Mark Duplicates as per request and using existing Mark Duplicates BAM files from ${params.mkdp}"
 
-        existing_mkdp_ch = channel
+        mkdp_output_ch = channel
             .fromPath("${params.mkdp}/*_mkdp.bam", checkIfExists: true)
             .map { bam ->
-                log.info "Processing existing Mark Duplicates BAM file: ${bam.Name}"
-                tuple(sample_id, bam)
-        }
+                def short_name = bam.baseName.replaceAll(/_mkdp$/, '')
+                tuple(short_name, bam)
+            }
+            .join(sample_id_mapping_ch)
+            .map { short_name, bam, full_sample_id ->
+                def metrics = file("${params.mkdp}/${short_name}_marked_duplicates_metrics.txt")
+                
+                if (!metrics.exists()) {
+                    log.warn "Metrics file not found for ${full_sample_id}, creating placeholder"
+                    metrics = file("${params.mkdp}/.dummy_metrics.txt")
+                }
+                
+                log.info "Processing existing Mark Duplicates BAM file: ${bam.name} for sample ${full_sample_id}"
+                tuple(full_sample_id, bam, metrics)
+            }
     } else {
         log.info "Performing Mark Duplicates with Picard"
+        
         // Checking for existing Mark Duplicates BAMs to reuse
         existing_mkdp_ch = channel.empty()
         if (file(params.mkdp).exists()) {
             existing_mkdp_ch = channel
                 .fromPath("${params.mkdp}/*_mkdp.bam", checkIfExists: false)
                 .map { bam ->
-                    log.info "Reusing existing duplicates-marked BAM file: ${bam.baseName} for sample ${sample_id}"
-                    tuple(sample_id, bam)
+                    def short_name = bam.baseName.replaceAll(/_mkdp$/, '')
+                    tuple(short_name, bam)
                 }
+                .join(sample_id_mapping_ch)
+                .map { short_name, bam, full_sample_id ->
+                    def metrics = file("${params.mkdp}/${short_name}_marked_duplicates_metrics.txt")
+                    
+                    if (!metrics.exists()) {
+                        log.warn "Metrics file not found for ${full_sample_id}, will reprocess"
+                        return null
+                    }
+                    
+                    log.info "Reusing existing duplicates-marked BAM file: ${bam.baseName} for sample ${full_sample_id}"
+                    tuple(full_sample_id, bam, metrics)
+                }
+                .filter { f -> f != null }
+            
+            // Find samples that need MKDP
+            samples_needing_mkdp = bam_ch
+                .join(existing_mkdp_ch, by: 0, remainder: true)
+                .filter { _sample_id, _bam, existing_mkdp, _existing_metrics -> existing_mkdp == null }
+                .map { sample_id, bam, _existing_mkdp, _existing_metrics -> tuple(sample_id, bam) }
+            
+            // Perform Mark Duplicates
+            new_mkdp_ch = MarkDuplicates(samples_needing_mkdp)
+
+            mkdp_output_ch = existing_mkdp_ch.mix(new_mkdp_ch)
+        } else {
+            // No existing MKDP BAMs, process everything
+            mkdp_output_ch = MarkDuplicates(bam_ch)
         }
-
-        // Perform Mark Duplicates
-        new_mkdp_ch = MarkDuplicates(bam_ch)
-
-        mkdp_ch = existing_mkdp_ch.mix(new_mkdp_ch)
     }
 
-    MKDPStats(mkdp_ch
-    .map { mkdp_id, bam, _metrics -> tuple(mkdp_id, bam) }, params.mkdp_stats)
+    // Extract just sample_id and bam for stats
+    mkdp_ch = mkdp_output_ch.map { sample_id, bam, _metrics -> tuple(sample_id, bam) }
+    
+    MKDPStats(mkdp_ch, params.mkdp_stats)
 
 
     actuallySkipFiltering = shouldSkipFiltering()
 
     if (actuallySkipFiltering) {
-        log.info "Skipping BAM filtering as per request and using existing filtered BAM files fro ${params.filtered}"
+        log.info "Skipping BAM filtering as per request and using existing filtered BAM files from ${params.filtered}"
 
-        existing_filtered_ch = channel
+        filtered_output_ch = channel
             .fromPath("${params.filtered}/*_filtered.bam", checkIfExists: true)
             .map { bam ->
-                log.info "Processing existing filtered BAM file"
+                def short_name = bam.baseName.replaceAll(/_filtered$/, '')
+                tuple(short_name, bam)
+            }
+            .join(sample_id_mapping_ch)
+            .map { _short_name, bam, full_sample_id ->
                 def bai_paths = [
-                    file("${bam}.bai"),                           // standard .bam.bai
-                    file("${bam.toString().replaceAll(/\.bam$/, '.bai')}")  // alternative .bai
+                    file("${bam}.bai"),
+                    file("${bam.toString().replaceAll(/\.bam$/, '.bai')}")
                 ]
 
                 def bai = bai_paths.find { f -> f.exists()}
                 if (bai) {
-                    log.info "Found index for ${bam.name}: ${bai.name}"
-                    return tuple(bam, bai)
+                    log.info "Found index for ${bam.name}: ${bai.name} for sample ${full_sample_id}"
+                    return tuple(full_sample_id, bam, bai)
                 } else {
                     log.error "Index file not found for ${bam.name}"
                     log.error "Looked for: ${bai_paths.collect{ f -> f.toString()}.join(', ')}"
                     error "Index file not found for ${bam.name}. Please ensure BAM files are properly indexed."
                 }
-                }
+            }
     } else {
         log.info "Performing BAM filtering"
         
@@ -289,28 +362,44 @@ workflow{
             existing_filtered_ch = channel
                 .fromPath("${params.filtered}/*_filtered.bam", checkIfExists: false)
                 .map { bam ->
-                    log.info "Checking for existing BAI file for filtered BAM: ${bam.baseName}"
+                    def short_name = bam.baseName.replaceAll(/_filtered$/, '')
+                    tuple(short_name, bam)
+                }
+                .join(sample_id_mapping_ch)
+                .map { _short_name, bam, full_sample_id ->
                     def bai_paths = [
-                        file("${bam}.bai"),                           // standard .bam.bai
-                        file("${bam.toString().replaceAll(/\.bam$/, '.bai')}")  // alternative .bai
+                        file("${bam}.bai"),
+                        file("${bam.toString().replaceAll(/\.bam$/, '.bai')}")
                     ]
                     def bai = bai_paths.find { f -> f.exists() }
                     if (bai) {
-                        log.info "Found existing indexed BAM: ${bam.name}"
-                        return tuple(bam, bai)
+                        log.info "Found existing indexed BAM: ${bam.name} for sample ${full_sample_id}"
+                        return tuple(full_sample_id, bam, bai)
                     } else {
-                        log.warn "Found BAM without index: ${bam.name} - will skip"
+                        log.warn "Found BAM without index: ${bam.name} - will reprocess"
                         return null
                     }
                 }
-                .filter { f -> f != null} // Removes nulls where no BAI was found
-        }
-        new_filtered_ch = FilterBAM(mkdp_ch.map { mkdp_id, bam, _metrics -> tuple(mkdp_id, bam) })
+                .filter { f -> f != null }
+            
+            // Find samples that need filtering
+            samples_needing_filtering = mkdp_ch
+                .join(existing_filtered_ch, by: 0, remainder: true)
+                .filter { _sample_id, _mkdp_bam, existing_filtered, _existing_bai -> existing_filtered == null }
+                .map { sample_id, mkdp_bam, _existing_filtered, _existing_bai -> tuple(sample_id, mkdp_bam) }
+            
+            new_filtered_ch = FilterBAM(samples_needing_filtering)
 
-        filtered_ch = existing_filtered_ch.mix(new_filtered_ch)
+            filtered_output_ch = existing_filtered_ch.mix(new_filtered_ch)
+        } else {
+            // No existing filtered BAMs, filter everything
+            filtered_output_ch = FilterBAM(mkdp_ch)
+        }
     }
 
-    FilteredStats(filtered_ch
-    .map { filtered_id, bam, _bai -> tuple(filtered_id, bam)}, params.filtered_stats)
+    // Extract just sample_id and bam for stats
+    filtered_ch = filtered_output_ch.map { sample_id, bam, _bai -> tuple(sample_id, bam) }
+    
+    FilteredStats(filtered_ch, params.filtered_stats)
 
 }
