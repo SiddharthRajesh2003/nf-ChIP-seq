@@ -2,3 +2,5 @@ misc/
 chip_seq_script.sh
 download.sh
 donwload.sh
+results.tar.gz
+results/

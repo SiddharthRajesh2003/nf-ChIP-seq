@@ -169,7 +169,6 @@ def shouldSkipFiltering() {
 }
 
 workflow{
-
     ref_index = BuildIndex(tuple(file(params.ref), file(params.gtf)))
     
     channel
@@ -227,14 +226,18 @@ workflow{
                     tuple(full_sample_id, bam)
                 }
             
-            // Find samples that need alignment
-            samples_to_align = trimmed_ch
+            // Create two separate channels from the join
+            joined_ch = trimmed_ch
                 .join(existing_bam_ch, by: 0, remainder: true)
+            
+            // Find samples that need alignment
+            samples_to_align = joined_ch
                 .filter { _sample_id, _fastq, existing_bam -> existing_bam == null }
                 .map { sample_id, fastq, _existing_bam -> tuple(sample_id, fastq) }
             
-            reused_bams = trimmed_ch
-                .join(existing_bam_ch, by: 0)
+            // Find samples with existing BAMs
+            reused_bams = joined_ch
+                .filter { _sample_id, _fastq, existing_bam -> existing_bam != null }
                 .map { sample_id, _fastq, bam -> 
                     log.info "Reusing existing BAM for sample ${sample_id}"
                     tuple(sample_id, bam) 
@@ -303,16 +306,22 @@ workflow{
                 }
                 .filter { f -> f != null }
             
+            // Create two separate channels from the join
+            joined_mkdp_ch = bam_ch
+                .join(existing_mkdp_ch.map { sample_id, bam, _metrics -> tuple(sample_id, bam) }, by: 0, remainder: true)
+            
             // Find samples that need MKDP
-            samples_needing_mkdp = bam_ch
-                .join(existing_mkdp_ch, by: 0, remainder: true)
-                .filter { _sample_id, _bam, existing_mkdp, _existing_metrics -> existing_mkdp == null }
-                .map { sample_id, bam, _existing_mkdp, _existing_metrics -> tuple(sample_id, bam) }
+            samples_needing_mkdp = joined_mkdp_ch
+                .filter { _sample_id, _bam, existing_mkdp -> existing_mkdp == null }
+                .map { sample_id, bam, _existing_mkdp -> tuple(sample_id, bam) }
+            
+            // Get the full existing MKDP tuples (with metrics)
+            reused_mkdp = existing_mkdp_ch
             
             // Perform Mark Duplicates
             new_mkdp_ch = MarkDuplicates(samples_needing_mkdp)
 
-            mkdp_output_ch = existing_mkdp_ch.mix(new_mkdp_ch)
+            mkdp_output_ch = reused_mkdp.mix(new_mkdp_ch)
         } else {
             // No existing MKDP BAMs, process everything
             mkdp_output_ch = MarkDuplicates(bam_ch)
@@ -382,15 +391,21 @@ workflow{
                 }
                 .filter { f -> f != null }
             
+            // Create two separate channels from the join
+            joined_filtered_ch = mkdp_ch
+                .join(existing_filtered_ch.map { sample_id, bam, _bai -> tuple(sample_id, bam) }, by: 0, remainder: true)
+            
             // Find samples that need filtering
-            samples_needing_filtering = mkdp_ch
-                .join(existing_filtered_ch, by: 0, remainder: true)
-                .filter { _sample_id, _mkdp_bam, existing_filtered, _existing_bai -> existing_filtered == null }
-                .map { sample_id, mkdp_bam, _existing_filtered, _existing_bai -> tuple(sample_id, mkdp_bam) }
+            samples_needing_filtering = joined_filtered_ch
+                .filter { _sample_id, _mkdp_bam, existing_filtered -> existing_filtered == null }
+                .map { sample_id, mkdp_bam, _existing_filtered -> tuple(sample_id, mkdp_bam) }
+            
+            // Get the full existing filtered tuples (with bai)
+            reused_filtered = existing_filtered_ch
             
             new_filtered_ch = FilterBAM(samples_needing_filtering)
 
-            filtered_output_ch = existing_filtered_ch.mix(new_filtered_ch)
+            filtered_output_ch = reused_filtered.mix(new_filtered_ch)
         } else {
             // No existing filtered BAMs, filter everything
             filtered_output_ch = FilterBAM(mkdp_ch)
@@ -401,5 +416,4 @@ workflow{
     filtered_ch = filtered_output_ch.map { sample_id, bam, _bai -> tuple(sample_id, bam) }
     
     FilteredStats(filtered_ch, params.filtered_stats)
-
 }
