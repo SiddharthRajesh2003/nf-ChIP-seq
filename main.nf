@@ -13,6 +13,8 @@ params.threads = 8
 params.fastq_dir = "${params.base}/fastq"
 params.raw_reads = "${params.fastq_dir}/raw_reads"
 params.trimmed_reads = "${params.fastq_dir}/trimmed_reads"
+params.skip_trimming = false
+params.fallback_to_trimming = true
 params.results = "${params.base}/results"
 
 
@@ -43,6 +45,7 @@ params.mkdp_stats = "${params.stats_dir}/mkdp"
 // Parameters for filtering random noise regions from the BAM files
 params.filtered = "${params.bam_dir}/filtered"
 params.skip_filtering = false
+params.fallback_to_filtering = true
 params.blacklist = "${params.ref_dir}/hg19-blacklist.v2.bed"
 params.filtered_stats = "${params.stats_dir}/filtered"
 
@@ -51,6 +54,16 @@ params.peaks_dir = "${params.results}/peaks/broad"
 params.annotation_dir = "${params.results}/peaks/annotated"
 params.genome_size = 'hs'
 
+
+// Parameters for Motif Discovery and Analysis
+params.motif_dir = "${params.results}/motif_analysis"
+params.motif_database = "${params.ref_dir}/JASPAR2024_CORE_vertebrates_non-redundant_pfms_meme.txt"
+params.run_motif_analysis = true  // Set to true to run motif analysis
+params.top_peaks = 500
+params.motif_window = 100
+params.meme_minw = 6
+params.meme_maxw = 20
+params.meme_nmotifs = 10
 
 def helpMessage() {
     log.info"""
@@ -68,6 +81,7 @@ def helpMessage() {
         --blacklist       Path to blacklist BED file
     
     Optional Parameters:
+        --skip_trimming   Skip trimming if trimmed Fastq files are present (default: false)
         --skip_alignment   Skip alignment if BAM files are present (default: false)
         --skip_mkdp        Skip Mark Duplicates if BAM files are present (default: false)
         --skip_filtering   Skip BAM filtering if filtered BAM files are present (default: false)
@@ -86,6 +100,38 @@ include { MarkDuplicates } from './modules/mkdp.nf'
 include { FilterBAM } from './modules/filter_bam.nf'
 include { PeakCalling } from './modules/peakcall.nf'
 include { AnnotatePeaks } from './modules/peak_annotation.nf'
+include { MotifDiscovery } from './modules/motif_discovery.nf'
+include { MotifAnalysis } from './modules/motif_analysis.nf'
+include { AME } from './modules/motif_enrichment.nf'
+
+def shouldSkipTrimming() {
+    if (!params.skip_trimming) {
+        return false
+    }
+
+    def trimmedDir = file(params.trimmed_reads)
+    if (!trimmedDir.exists()) {
+        if (params.fallback_to_trimming) {
+            log.warn "Trimmed Fastq directory ${params.trimmed_reads} does not exist! Will perform fastq trimming"
+            return false
+        } else {
+            error "Trimmed Fastq directory ${params.trimmed_reads}  does not exist and fallback_to_trimming is disabled!"
+        }
+    }
+
+    def fastqFiles = trimmedDir.listFiles().findAll { f ->
+        f.name.endsWith('.fq.gz') || f.name.endsWith('.fastq.gz')
+    }
+    if (fastqFiles.isEmpty()) {
+        if (params.fallback_to_trimming) {
+            log.warn "No trimmed fastq files found in ${params.trimmed_reads}! Will perform trimming"
+            return false
+        } else {
+            error "No trimmed fastq files found in ${params.trimmed_reads} and fallback_to_trimming is disabled!"
+        }
+    }
+    return true
+}
 
 def shouldSkipAlignment() {
     if (!params.skip_alignment) {
@@ -135,6 +181,7 @@ def shouldSkipMKDP() {
     if (mkdpFiles.isEmpty()) {
         if (params.fallback_to_mkdp) {
             log.warn "No Mark Duplicates BAM files found in ${params.mkdp}! Will perform Mark Duplicates with Picard"
+            return false
         } else {
             error "No Mark Duplicates BAM files found in ${params.mkdp} and fallback_to_mkdp is disabled!"
         }
@@ -150,26 +197,35 @@ def shouldSkipFiltering() {
     def filterDir = file(params.filtered)
     if (!filterDir.exists()) {
         if (params.fallback_to_filtering) {
-            log.warn "Mark Duplicates directory ${params.mkdp} does not exist! Will perform Mark Duplicates with Picard"
+            log.warn "Filtered BAM directory ${params.filtered} does not exist! Will perform BAM filtering"
             return false
         } else {
-            error "Mark Duplicates directory ${params.mkdp} does not exist and fallback_to_mkdp is disabled!"
+            error "Filtered BAM directory ${params.filtered} does not exist and fallback_to_filtering is disabled!"
         }
     }
 
-    def mkdpFiles = filterDir.listFiles().findAll { f -> f.name.endsWith('_filtered.bam') }
-    if (mkdpFiles.isEmpty()) {
-        if (params.fallback_to_mkdp) {
-            log.warn "No Mark Duplicates BAM files found in ${params.mkdp}! Will perform Mark Duplicates with Picard"
+    def filteredFiles = filterDir.listFiles().findAll { f -> f.name.endsWith('_filtered.bam') }
+    if (filteredFiles.isEmpty()) {
+        if (params.fallback_to_filtering) {
+            log.warn "No filtered BAM files found in ${params.filtered}! Will perform BAM filtering"
+            return false
         } else {
-            error "No Mark Duplicates BAM files found in ${params.mkdp} and fallback_to_mkdp is disabled!"
+            error "No filtered BAM files found in ${params.filtered} and fallback_to_filtering is disabled!"
         }
     }
     return true
 }
 
 workflow{
-    ref_index = BuildIndex(tuple(file(params.ref), file(params.gtf)))
+    if (params.help) {
+        helpMessage()
+        return
+    }
+
+    ref_out = BuildIndex(tuple(file(params.ref), file(params.gtf)))
+
+    ref_index = ref_out.map { bt_index, _fai -> bt_index }
+    genome_fai = ref_out.map { _bt_index, fai -> fai}
     
     channel
         .fromPath(params.input_csv)
@@ -181,13 +237,72 @@ workflow{
     // This will be used throughout to maintain the full sample_id
     sample_id_mapping_ch = samples_ch
         .map { sample_id, _fastq -> 
-            def short_name = sample_id.split(':')[-1]
+            def short_name = sample_id.split('_')[-1]
             tuple(short_name, sample_id)
         }
 
     QC_before_trim(samples_ch, params.qc_dir_before_trim)
 
-    trimmed_ch = TrimReads(samples_ch)
+    actuallySkipTrimming = shouldSkipTrimming()
+
+    if (actuallySkipTrimming) {
+        log.info "Skipping trimming as per request and using existing trimmed fastq files from ${params.trimmed_reads}"
+
+        trimmed_ch = channel
+            .fromPath("${params.trimmed_reads}/*.fq.gz", checkIfExists: true)
+            .map { fq ->
+                def short_name = fq.baseName.split('_')[0]
+                log.info "Found existing trimmed fastq file for sample: ${fq.name}"
+                tuple(short_name, fq)
+                }
+                .join(sample_id_mapping_ch)
+                .map {
+                    _short_name, fq, full_sample_id ->
+                    tuple(full_sample_id, fq)
+                }
+    } else {
+        log.info "Performing trimming with trimgalore"
+
+        // Check for existing trimmed fastq files to potentially reuse
+        if (file(params.trimmed_reads).exists()) {
+            existing_fq_ch = channel
+                .fromPath("${params.trimmed_reads}/*.fq.gz", checkIfExists: false)
+                .map { fq ->
+                    def short_name = fq.baseName.split("_")[0]
+                    tuple(short_name, fq)
+                }
+                .join(sample_id_mapping_ch)
+                .map {
+                    _short_name, fq, full_sample_id ->
+                    tuple(full_sample_id, fq)
+                }
+            
+            // Create 2 separate channels from the join
+            joined_fq_ch = samples_ch
+                .join(existing_fq_ch, by: 0, remainder: true)
+
+            // Find samples that need trimming
+            samples_to_trim = joined_fq_ch
+                .filter { _sample_id, _fastq, existing_fq -> existing_fq == null } 
+                .map { sample_id, fastq, _existing_fq -> tuple(sample_id, fastq) }
+
+            // Find samples with existing trimmed fastq files
+            reused_fq = joined_fq_ch
+                .filter { _sample_id, _fastq, existing_fq -> existing_fq != null } 
+                .map { sample_id, _fastq, fq ->
+                tuple(sample_id, fq)
+                }
+
+            // Perform trimming for samples without existing trimmed fastq files
+            new_fq_ch = TrimReads(samples_to_trim)
+
+            // Combine reused and newly trimmed fastq files
+            trimmed_ch = reused_fq.mix(new_fq_ch)
+        } else {
+            // No existing trimmed fastq files, trim all files
+            trimmed_ch = TrimReads(samples_ch)
+        }
+    }
 
     QC_after_trim(trimmed_ch, params.qc_dir_after_trim)
 
@@ -416,4 +531,35 @@ workflow{
     filtered_ch = filtered_output_ch.map { sample_id, bam, _bai -> tuple(sample_id, bam) }
     
     FilteredStats(filtered_ch, params.filtered_stats)
+
+    peaks_ch = PeakCalling(filtered_output_ch)
+
+    AnnotatePeaks(
+        peaks_ch.map { sample_id, _xls, broadPeak, _gappedPeak -> tuple(sample_id, broadPeak) },
+        params.gtf
+    )
+
+    if (params.run_motif_analysis) {
+        log.info "Running Motif discovery and enrichment analysis"
+
+        motif_input = peaks_ch.map { sample_id, _xls, broadPeak, _gappedPeak -> tuple(sample_id, broadPeak) }
+
+        MotifDiscovery(
+            motif_input,
+            file(params.ref),
+            genome_fai
+        )
+        
+        MotifAnalysis(
+            motif_input,
+            file(params.ref)
+        )
+
+        AME(
+            motif_input,
+            file(params.ref),
+            genome_fai,
+            file(params.motif_database)
+        )
+    }
 }

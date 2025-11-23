@@ -13,7 +13,7 @@ process FilterBAM {
     tuple val(sample_id), path("*_filtered.bam"), path("*_filtered.bai")
 
     script:
-    def sample_name = sample_id.split(':')[-1]  // Get everything after ':'
+    def sample_name = sample_id.split('_')[-1]  // Get everything after ':'
     """
     ${params.base}/Apps/ngsutilsj bam-filter --mapped --no-qcfail --tag-min MAPQ:30 \
         ${bam} ${sample_name}_filtered0.bam

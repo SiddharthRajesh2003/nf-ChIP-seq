@@ -13,7 +13,7 @@ process MarkDuplicates {
     tuple val(sample_id), path("*_mkdp.bam"), path ("*_marked_duplicates_metrics.txt")
 
     script:
-    def sample_name = sample_id.split(':')[-1]  // Get everything after ':'
+    def sample_name = sample_id.split('_')[-1]  // Get everything after ':'
     """    
     # Create temp directory for GATK
     mkdir -p ./tmp

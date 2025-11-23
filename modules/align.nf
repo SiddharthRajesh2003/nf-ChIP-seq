@@ -14,7 +14,7 @@ process AlignReads {
     tuple val(sample_id), path("*.bam")
 
     script:
-    def sample_name = sample_id.split(':')[-1]  // Get everything after ':'
+    def sample_name = sample_id.split('_')[-1]  // Get everything after '_'
     def index_base = ref_index[0].toString().replaceAll(/\.1\.bt2$/, '')
     """
     bowtie2 -x ${index_base} \

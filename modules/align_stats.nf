@@ -14,7 +14,7 @@ process AlignStats {
     tuple path("*_flagstats.txt"), path("*_stats.txt"), path("*_idxstats.txt")
 
     script:
-    def sample_name = sample_id.split(':')[-1]
+    def sample_name = sample_id
     """
     samtools flagstat ${bam} > ${sample_name}_flagstats.txt
 

@@ -7,7 +7,8 @@ process AnnotatePeaks {
     publishDir "${params.annotation_dir}", mode: "copy"
 
     input:
-    tuple val(sample_id), path(peaks), path(annotation_db)
+    tuple val(sample_id), path(peaks)
+    path(gtf)
 
     output:
     path "${sample_id}_annotated.bed"
@@ -15,7 +16,7 @@ process AnnotatePeaks {
     script:
     """
     annotatePeaks.pl ${peaks} ${params.ref} \
-        -gtf ${params.gtf} \
+        -gtf ${gtf} \
         -annStats ${sample_id}_annotation_stats.txt \
         -CpG \
         > ${sample_id}_annotated.bed

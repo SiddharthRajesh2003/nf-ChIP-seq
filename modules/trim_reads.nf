@@ -10,7 +10,7 @@ process TrimReads {
     tuple val(sample_id), path(fastq)
     
     output:
-    tuple val(sample_id), path("${fastq.baseName}_trimmed.fq.gz")
+    tuple val(sample_id), path("*.fq.gz")
 
     script:
     """
