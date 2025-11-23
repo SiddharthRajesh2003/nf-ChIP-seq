@@ -64,6 +64,7 @@ params.motif_window = 100
 params.meme_minw = 6
 params.meme_maxw = 20
 params.meme_nmotifs = 10
+params.run_meme = false
 
 def helpMessage() {
     log.info"""
@@ -86,6 +87,7 @@ def helpMessage() {
         --skip_mkdp        Skip Mark Duplicates if BAM files are present (default: false)
         --skip_filtering   Skip BAM filtering if filtered BAM files are present (default: false)
         --run_motif_analysis Run motif discovery and enrichment analysis using HOMER and MEME (default: true)
+        --run_meme         Use MEME-CHIP and AME to validate your HOMER results
     """
 }
 
@@ -544,23 +546,26 @@ workflow{
         log.info "Running Motif discovery and enrichment analysis"
 
         motif_input = peaks_ch.map { sample_id, _xls, broadPeak, _gappedPeak -> tuple(sample_id, broadPeak) }
-
-        MotifDiscovery(
-            motif_input,
-            file(params.ref),
-            genome_fai
-        )
         
         MotifAnalysis(
             motif_input,
             file(params.ref)
         )
 
-        AME(
-            motif_input,
-            file(params.ref),
-            genome_fai,
-            file(params.motif_database)
-        )
+        if (params.run_meme) {
+            MotifDiscovery(
+                motif_input,
+                file(params.ref),
+                genome_fai
+            )
+
+            AME(
+                motif_input,
+                file(params.ref),
+                genome_fai,
+                file(params.motif_database)
+            )
+
+        }
     }
 }
