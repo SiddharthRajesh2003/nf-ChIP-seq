@@ -11,7 +11,7 @@ process AnnotatePeaks {
     path(gtf)
 
     output:
-    path "${sample_id}_annotated.bed"
+    tuple path("${sample_id}_annotated.bed"), path("*_stats.txt")
 
     script:
     """

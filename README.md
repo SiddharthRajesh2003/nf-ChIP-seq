@@ -9,7 +9,8 @@ mkdir -p $base/fastq/raw_reads
 module load sra-toolkit
 
 for s in $srr; do
-        fasterq-dump $s -O fastq/raw_reads
+        prefetch $s -O sra_files
+        fasterq-dump sra_files/$s -O fastq/raw_reads
 done
 ```
 
