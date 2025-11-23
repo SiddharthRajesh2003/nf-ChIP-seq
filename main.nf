@@ -85,6 +85,7 @@ def helpMessage() {
         --skip_alignment   Skip alignment if BAM files are present (default: false)
         --skip_mkdp        Skip Mark Duplicates if BAM files are present (default: false)
         --skip_filtering   Skip BAM filtering if filtered BAM files are present (default: false)
+        --run_motif_analysis Run motif discovery and enrichment analysis using HOMER and MEME (default: true)
     """
 }
 
