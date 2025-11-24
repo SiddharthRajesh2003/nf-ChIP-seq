@@ -3,16 +3,20 @@
 A modular Nextflow pipeline for ChIP-seq data analysis, including download, QC, alignment, peak calling, motif analysis, and annotation.
 
 ## Table of Contents
-- [Overview](#overview)
-- Folder Structure
-- Getting Started
-- Pipeline Modules
-- Input Files
-- Reference Files
-- Results
-- Scripts
-- Usage
-- License
+- [Nextflow Pipeline for ChIP-seq Data Analysis](#nextflow-pipeline-for-chip-seq-data-analysis)
+  - [Table of Contents](#table-of-contents)
+    - [Overview](#overview)
+    - [Folder Structure](#folder-structure)
+  - [Getting Starteed](#getting-starteed)
+  - [Pipeline Modules](#pipeline-modules)
+    - [Input Files](#input-files)
+    - [Reference files](#reference-files)
+  - [Results](#results)
+  - [Scripts](#scripts)
+  - [Usage](#usage)
+        - [Samples Used for this analysis](#samples-used-for-this-analysis)
+  - [Acknowledgements](#acknowledgements)
+  - [License](#license)
 
 ### Overview
 
