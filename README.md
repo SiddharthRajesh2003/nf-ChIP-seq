@@ -18,6 +18,8 @@ A modular Nextflow pipeline for ChIP-seq data analysis, including download, QC, 
   - [Acknowledgements](#acknowledgements)
   - [License](#license)
 
+**Team Members:** Isabella Castelano, Matthew Ng, Siddharth Rajesh
+
 ### Overview
 
 This pipeline automates the analysis of ChIP-seq data using Nextflow. It supports SRA download, quality control, read trimming, alignment, peak calling, motif discovery/enrichment, and peak annotation.
