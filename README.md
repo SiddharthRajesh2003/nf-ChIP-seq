@@ -18,7 +18,7 @@ A modular Nextflow pipeline for ChIP-seq data analysis, including download, QC, 
   - [Acknowledgements](#acknowledgements)
   - [License](#license)
 
-**Team Members:** Isabella Castelano, Matthew Ng, Siddharth Rajesh
+**Team Members:** Isabella Castellano, Matthew Ng, Siddharth Rajesh
 
 ### Overview
 
@@ -175,5 +175,6 @@ done
 - JASPAR
   
 ## License
+
 
 See LICENSE for details
