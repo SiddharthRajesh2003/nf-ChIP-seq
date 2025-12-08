@@ -103,6 +103,10 @@ SCZ_SRR1234567,path/to/SRR1234567.fastq
 
 ### Reference files
 ```bash
+mkdir -p Apps
+wget https://github.com/compgen-io/ngsutilsj/releases/download/ngsutilsj-0.5.0/ngsutilsj -P Apps/
+chmod +x Apps/ngsutilsj
+
 wget https://hgdownload.soe.ucsc.edu/goldenPath/hg19/bigZips/hg19.fa.gz -P reference/
 wget https://hgdownload.soe.ucsc.edu/goldenPath/hg19/bigZips/genes/hg19.knownGene.gtf.gz -P reference/
 wget https://hgdownload.soe.ucsc.edu/goldenPath/hg19/bigZips/hg19.chrom.sizes -P reference/
