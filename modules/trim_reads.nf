@@ -6,6 +6,8 @@ process TrimReads {
     tag "Trimming Reads for ${sample_id}"
     publishDir "${params.trimmed_reads}", mode: 'copy'
 
+    container 'biowardrobe2/trimgalore:v0.4.4'
+
     input:
     tuple val(sample_id), path(fastq)
     

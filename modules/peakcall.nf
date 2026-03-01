@@ -6,6 +6,8 @@ process PeakCalling {
     tag "Peak Calling for ${sample_id}"
     publishDir "${params.peaks_dir}", mode: "copy"
 
+    container 'biocontainers/macs:v2.1.2.1-1-deb_cv1'
+
     input:
     tuple val(sample_id), path(bam), path(bai)
 

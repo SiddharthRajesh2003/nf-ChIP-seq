@@ -6,6 +6,8 @@ process AlignReads {
     tag "Aligning Reads for ${sample_id}"
     publishDir "${params.aligned}", mode: 'copy'
 
+    container 'biocontainers/bowtie:v1.2.2dfsg-4-deb_cv1'
+
     input:
     tuple val(sample_id), path(fastq)
     path ref_index

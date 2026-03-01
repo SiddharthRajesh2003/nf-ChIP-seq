@@ -31,13 +31,7 @@ echo "Output directory: $OUTPUT_DIR"
 export NXF_WORK="${base}/work"
 
 # Load modules
-module load fastqc
-module load sra-toolkit
-module load trimgalore
-module load bowtie
-module load samtools
-module load java/17.0.7
-module load gatk
+module load apptainer
 module load conda
 
 echo "Modules loaded successfully"

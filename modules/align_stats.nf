@@ -6,6 +6,8 @@ process AlignStats {
     tag "Alignment Statistics for ${sample_id}"
     publishDir "${out_dir}", mode: 'copy'
 
+    container 'biocontainers/samtools:v1.9-4-deb_cv1'
+
     input:
     tuple val(sample_id), path(bam)
     val out_dir

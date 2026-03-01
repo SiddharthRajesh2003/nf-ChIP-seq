@@ -6,6 +6,8 @@ process MotifAnalysis {
     tag "Motif Analysis for ${sample_id}"
     publishDir "${params.motif_dir}/homer", mode: 'copy'
 
+    container 'mgibio/homer:4.11.1'
+
     input:
     tuple val(sample_id), path(peaks)
     path ref

@@ -6,6 +6,8 @@ process QualityControl {
     tag "Quality Control on ${sample_id}"
     publishDir "${qc_dir}", mode: "copy"
 
+    container 'biocontainers/fastqc:v0.11.9_cv8'
+
     input:
     tuple val(sample_id), path(fastq)
     val qc_dir

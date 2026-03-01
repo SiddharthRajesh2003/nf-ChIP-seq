@@ -6,6 +6,8 @@ process AnnotatePeaks {
     tag "Peak Annotation for ${sample_id}"
     publishDir "${params.annotation_dir}", mode: "copy"
 
+    container 'mgibio/homer:4.11.1'
+
     input:
     tuple val(sample_id), path(peaks)
     path(gtf)

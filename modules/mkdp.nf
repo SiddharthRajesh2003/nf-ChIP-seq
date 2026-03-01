@@ -6,6 +6,7 @@ process MarkDuplicates {
     tag "Marking Duplicates for ${sample_id}"
     publishDir "${params.mkdp}", mode: 'copy'
 
+    container 'broadinstitute/gatk'
     input:
     tuple val(sample_id), path(bam)
 
