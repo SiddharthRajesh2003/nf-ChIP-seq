@@ -5,8 +5,6 @@ nextflow.enable.dsl = 2
 process AME {
     tag "AME Analysis for ${sample_id}"
     publishDir "${params.motif_dir}/ame", mode: 'copy'
-    
-    container 'autamus/meme:5.3.0'
 
     input:
     tuple val(sample_id), path(peaks)

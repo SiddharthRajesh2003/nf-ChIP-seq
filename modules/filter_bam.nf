@@ -6,7 +6,7 @@ process FilterBAM {
     tag "Filtering BAM for ${sample_id}"
     publishDir "${params.filtered}", mode: 'copy'
 
-    container 'weishwu/ngsutils:0.5.9'
+    container 'biocontainers/samtools:v1.9-4-deb_cv1'
 
     input:
     tuple val(sample_id), path(bam)
@@ -17,8 +17,6 @@ process FilterBAM {
     script:
     def sample_name = sample_id.split('_')[-1]  // Get everything after ':'
     """
-    module load samtools
-
     ${params.base}/Apps/ngsutilsj bam-filter --mapped --no-qcfail --tag-min MAPQ:30 \
         ${bam} ${sample_name}_filtered0.bam
 

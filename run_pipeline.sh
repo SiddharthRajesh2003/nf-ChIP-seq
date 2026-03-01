@@ -33,6 +33,7 @@ export NXF_WORK="${base}/work"
 # Load modules
 module load apptainer
 module load conda
+module load meme
 
 echo "Modules loaded successfully"
 
